@@ -1,0 +1,479 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Auto Scaling Lab with Apache Web Server (t3.micro) - Modified for easier testing
+
+Parameters:
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabVPC
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabIGW
+
+  # Attach Internet Gateway to VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnet 1
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabPublicSubnet1
+
+  # Public Subnet 2
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabPublicSubnet2
+
+  # Private Subnet 1
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabPrivateSubnet1
+
+  # Private Subnet 2
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabPrivateSubnet2
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabPublicRT
+
+  # Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabPrivateRT
+
+  # Public Route
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associate Public Subnet 1 with Public Route Table
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  # Associate Public Subnet 2 with Public Route Table
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Associate Private Subnet 1 with Private Route Table
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Associate Private Subnet 2 with Private Route Table
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # NAT Gateway EIP
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+    DependsOn: AttachGateway
+
+  # NAT Gateway
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabNAT
+
+  # Private Route
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  # Security Group for ALB
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  # Security Group for EC2 Instances
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access from ALB and SSH from specific IP
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: AutoScalingLabALB
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabALB
+
+  # ALB Target Group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: AutoScalingLabTG
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetType: instance
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # Launch Template
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: AutoScalingLabLaunchTemplate
+      LaunchTemplateData:
+        ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+        InstanceType: t3.micro
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Update the system
+            yum update -y
+            
+            # Install Apache and stress
+            yum install -y httpd stress
+            
+            # Start and enable Apache
+            systemctl start httpd
+            systemctl enable httpd
+            
+            # Create a simple web page with instance info and stress test button
+            INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+            PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+            
+            cat > /var/www/html/index.html << EOF
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Auto Scaling Lab</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+                    h1 { color: #333; }
+                    .info { background-color: #f5f5f5; padding: 20px; border-radius: 5px; display: inline-block; }
+                    .stress-btn { 
+                        background-color: #ff4757; 
+                        color: white; 
+                        border: none; 
+                        padding: 15px 32px; 
+                        text-align: center; 
+                        text-decoration: none; 
+                        display: inline-block; 
+                        font-size: 16px; 
+                        margin: 20px 2px; 
+                        cursor: pointer; 
+                        border-radius: 5px;
+                    }
+                    .stress-btn:hover { background-color: #ff6b81; }
+                </style>
+            </head>
+            <body>
+                <h1>Auto Scaling Lab</h1>
+                <div class="info">
+                    <h2>Hello from $PRIVATE_IP / $INSTANCE_ID</h2>
+                    <p>This instance is part of an Auto Scaling Group</p>
+                    <button class="stress-btn" onclick="startStressTest()">Stress Test CPU</button>
+                    <p id="status"></p>
+                </div>
+                
+                <script>
+                    function startStressTest() {
+                        document.getElementById('status').innerText = 'Starting CPU stress test for 60 seconds...';
+                        
+                        // Use fetch API to trigger stress test
+                        fetch('/stress', { method: 'POST' })
+                            .then(response => response.text())
+                            .then(data => {
+                                document.getElementById('status').innerText = 'Stress test completed!';
+                            })
+                            .catch(error => {
+                                document.getElementById('status').innerText = 'Error starting stress test: ' + error;
+                            });
+                    }
+                </script>
+            </body>
+            </html>
+            EOF
+            
+            # Create a simple stress test script that definitely works
+            cat > /var/www/html/stress.php << 'EOF'
+            <?php
+            header('Content-Type: text/plain');
+            echo "Starting CPU stress test...\n";
+            flush();
+            
+            // Fork a background process to do CPU intensive work
+            $pid = pcntl_fork();
+            if ($pid == 0) {
+                // Child process - do CPU intensive work
+                $end_time = time() + 60; // Run for 60 seconds
+                while (time() < $end_time) {
+                    // CPU intensive operations
+                    for ($i = 0; $i < 1000000; $i++) {
+                        sqrt($i);
+                    }
+                }
+                exit(0);
+            }
+            echo "CPU stress test started (PID: $pid)\n";
+            ?>
+            EOF
+            
+            # Install PHP
+            yum install -y php
+            
+            # Create a CGI script to handle stress test
+            mkdir -p /var/www/cgi-bin
+            cat > /var/www/cgi-bin/stress.sh << 'EOF'
+            #!/bin/bash
+            echo "Content-type: text/plain"
+            echo ""
+            echo "Starting CPU stress test for 60 seconds..."
+            
+            # Create CPU load using dd and /dev/zero
+            timeout 60 bash -c '
+                for i in {1..4}; do
+                    dd if=/dev/zero of=/dev/null bs=1M &
+                done
+                wait
+            ' &
+            
+            echo "CPU stress test initiated"
+            EOF
+            
+            chmod +x /var/www/cgi-bin/stress.sh
+            
+            # Configure Apache to handle the stress test endpoint
+            cat > /etc/httpd/conf.d/stress.conf << EOF
+            ScriptAlias /stress /var/www/cgi-bin/stress.sh
+            <Directory "/var/www/cgi-bin">
+                AllowOverride None
+                Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+                Require all granted
+            </Directory>
+            EOF
+            
+            # Restart Apache to apply changes
+            systemctl restart httpd
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: AutoScalingLabASG
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 4
+      DesiredCapacity: 1
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      Tags:
+        - Key: Name
+          Value: AutoScalingLabInstance
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+
+  # Scale Up Policy
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      Cooldown: 60
+      ScalingAdjustment: 1
+
+  # Scale Down Policy
+  ScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      Cooldown: 300
+      ScalingAdjustment: -1
+
+  # CPU High Alarm (Scale Out) - LOWERED THRESHOLD FOR TESTING
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 5% for 2 minutes (lowered for testing)
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/EC2
+              MetricName: CPUUtilization
+              Dimensions:
+                - Name: AutoScalingGroupName
+                  Value: !Ref AutoScalingGroup
+            Period: 60
+            Stat: Average
+          ReturnData: true
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 5
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      AlarmActions:
+        - !Ref ScaleUpPolicy
+
+  # CPU Low Alarm (Scale In)
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 2% for 10 minutes
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/EC2
+              MetricName: CPUUtilization
+              Dimensions:
+                - Name: AutoScalingGroupName
+                  Value: !Ref AutoScalingGroup
+            Period: 60
+            Stat: Average
+          ReturnData: true
+      ComparisonOperator: LessThanThreshold
+      Threshold: 2
+      EvaluationPeriods: 10
+      DatapointsToAlarm: 10
+      AlarmActions:
+        - !Ref ScaleDownPolicy
+
+Outputs:
+  LoadBalancerDNS:
+    Description: Load Balancer DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  LoadBalancerURL:
+    Description: URL for the Load Balancer
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}
