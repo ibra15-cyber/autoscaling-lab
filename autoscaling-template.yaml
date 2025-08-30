@@ -387,7 +387,7 @@ Resources:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       MinSize: 1
-      MaxSize: 4
+      MaxSize: 3
       DesiredCapacity: 1
       VPCZoneIdentifier:
         - !Ref PrivateSubnet1
