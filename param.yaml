@@ -1,3 +1,4 @@
 template-file-path: autoscaling-template.yaml
-parameters: {}
+parameters:
+  SSHLocation: 0.0.0.0/0
 tags: {}
