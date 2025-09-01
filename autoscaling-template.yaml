@@ -387,7 +387,7 @@ Resources:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       MinSize: 1
-      MaxSize: 4
+      MaxSize: 3
       DesiredCapacity: 1
       VPCZoneIdentifier:
         - !Ref PrivateSubnet1
@@ -426,7 +426,7 @@ Resources:
   CPUAlarmHigh:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Scale-up if CPU > 30% for 2 minutes (lowered for testing)
+      AlarmDescription: Scale-up if CPU > 5% for 2 minutes (lowered for testing)
       Metrics:
         - Id: m1
           MetricStat:
@@ -440,7 +440,7 @@ Resources:
             Stat: Average
           ReturnData: true
       ComparisonOperator: GreaterThanThreshold
-      Threshold: 30
+      Threshold: 5
       EvaluationPeriods: 2
       DatapointsToAlarm: 2
       AlarmActions:
