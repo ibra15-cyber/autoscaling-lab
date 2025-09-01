@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Auto Scaling Lab with Apache Web Server (t3.micro) - Modified for easier testing
+Description: Auto Scaling Lab with Apache Web Server (t3.micro) - Modified for  ier testing
 
 Parameters:
   SSHLocation:
@@ -387,7 +387,7 @@ Resources:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       MinSize: 1
-      MaxSize: 3
+      MaxSize: 4
       DesiredCapacity: 1
       VPCZoneIdentifier:
         - !Ref PrivateSubnet1
