@@ -2,7 +2,7 @@
 
 This CloudFormation template creates a complete AWS infrastructure setup to demonstrate Auto Scaling functionality with Apache web servers running on t3.micro instances.
 
-[text](http://autoscalinglabalb-497468542.eu-west-1.elb.amazonaws.com/)
+http://autoscalinglabalb-497468542.eu-west-1.elb.amazonaws.com/
 
 ## 🏗️ Infrastructure Overview
 
